@@ -7,28 +7,50 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
     body { font-family: 'Inter', sans-serif; }
-    .tab-active { background: #4f46e5; color: white; box-shadow: 0 2px 8px rgba(79,70,229,0.3); }
+
+    /* Tab states */
+    .tab-active   { background: #4f46e5; color: white; box-shadow: 0 2px 8px rgba(79,70,229,0.3); }
     .tab-inactive { color: #6b7280; }
+
+    /* Checked list items get a strikethrough + muted colour */
     .item-checked { text-decoration: line-through; color: #9ca3af; }
+
+    /* Subtle entry animation */
     .fade-in { animation: fadeIn 0.2s ease-in; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    .progress-bar-fill { transition: width 0.5s ease; }
-    .checkbox-custom {
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0);   }
+    }
+
+    /* Smooth progress bar width transitions */
+    .progress-bar { transition: width 0.5s ease; }
+
+    /* Custom checkbox that mimics <input type="checkbox"> with indigo accent */
+    .checkbox {
       width: 20px; height: 20px; min-width: 20px;
       border: 2px solid #d1d5db; border-radius: 5px;
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; transition: all 0.15s ease;
     }
-    .checkbox-custom:hover { border-color: #6366f1; }
-    .checkbox-custom.checked { background: #4f46e5; border-color: #4f46e5; }
+    .checkbox:hover          { border-color: #6366f1; }
+    .checkbox.is-checked     { background: #4f46e5; border-color: #4f46e5; }
+
+    /* Delete button: hidden until the parent row is hovered */
     .delete-btn { opacity: 0.2; transition: opacity 0.15s; }
     .item-row:hover .delete-btn { opacity: 1; }
+
+    /* On touch devices keep delete buttons slightly visible */
     @media (pointer: coarse) { .delete-btn { opacity: 0.4; } }
   </style>
 </head>
+
 <body class="bg-gradient-to-br from-slate-50 via-sky-50 to-indigo-50 min-h-screen">
 
+<!-- ═══════════════════════════════════════════════════════════
+     APP SHELL
+     ═══════════════════════════════════════════════════════════ -->
 <div class="max-w-lg mx-auto px-4 py-6 pb-12">
 
   <!-- Header -->
@@ -40,57 +62,141 @@
     <p class="text-gray-400 text-sm">Dein smarter Reisebegleiter</p>
   </div>
 
-  <!-- Tabs -->
+  <!-- Tab Navigation -->
   <div class="flex bg-white rounded-2xl shadow-sm mb-5 p-1 gap-1">
-    <button onclick="setTab('planner')" id="tab-planner" class="flex-1 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-semibold transition-all tab-active">
-      🗺️ Reiseplaner
-    </button>
-    <button onclick="setTab('baselist')" id="tab-baselist" class="flex-1 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-semibold transition-all tab-inactive">
-      📋 Basisliste
-    </button>
-    <button onclick="setTab('archive')" id="tab-archive" class="flex-1 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-semibold transition-all tab-inactive">
-      🗄️ Archiv
-    </button>
+    <button onclick="setTab('planner')"  id="tab-planner"  class="flex-1 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-semibold transition-all tab-active">🗺️ Reiseplaner</button>
+    <button onclick="setTab('baselist')" id="tab-baselist" class="flex-1 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-semibold transition-all tab-inactive">📋 Basisliste</button>
+    <button onclick="setTab('archive')"  id="tab-archive"  class="flex-1 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-semibold transition-all tab-inactive">🗄️ Archiv</button>
   </div>
 
-  <!-- Tab Content -->
-  <div id="content-planner" class="fade-in"></div>
+  <!-- Tab Panels -->
+  <div id="content-planner"  class="fade-in"></div>
   <div id="content-baselist" class="hidden fade-in"></div>
-  <div id="content-archive" class="hidden fade-in"></div>
+  <div id="content-archive"  class="hidden fade-in"></div>
 
 </div>
 
-<!-- Toast -->
-<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-5 py-2.5 rounded-full shadow-xl text-sm font-medium z-50 hidden transition-all"></div>
+<!-- Toast Notification -->
+<div id="toast"
+     class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-5 py-2.5 rounded-full shadow-xl text-sm font-medium z-50 hidden transition-all">
+</div>
 
+<!-- ═══════════════════════════════════════════════════════════
+     JAVASCRIPT
+     ═══════════════════════════════════════════════════════════ -->
 <script>
-// ============================================================
-// STATE
-// ============================================================
-let setupWeather = 'warm';
-let collapsedCats = new Set();
 
-let newCatEmoji     = '📦';
-let baseListSavedAt = null;
+// ─────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────
 
-function saveBaseList() {
-  saveAll();
-  baseListSavedAt = new Date();
-}
-
-let state = {
-  activeTab: 'planner',
-  currentTrip: null,
-  baseList: migrateBaseList(loadFromStorage('packApp_baseList', null)),
-  savedTrips: loadFromStorage('packApp_savedTrips', []),
+/** localStorage keys — centralised so refactoring never breaks persistence. */
+const STORAGE_KEYS = {
+  BASE_LIST:    'packApp_baseList',
+  SAVED_TRIPS:  'packApp_savedTrips',
+  CURRENT_TRIP: 'packApp_currentTrip',
 };
 
-// Init current trip from storage
-state.currentTrip = loadFromStorage('packApp_currentTrip', null);
+/**
+ * IDs of the three built-in base-list categories.
+ * Used to distinguish them from user-created custom categories.
+ */
+const BUILT_IN_CATEGORY_IDS = ['health', 'documents', 'basics'];
 
-// ============================================================
-// DEFAULTS
-// ============================================================
+/** Emoji quick-picks shown in the "New Category" form of the base list. */
+const QUICK_EMOJI_PICKS = ['📦','🎒','🧳','💊','🧴','🎿','🏋️','🎯','🎨','📚','🍽️','💼','🎵','🧹','🛒'];
+
+/** SVG checkmark rendered inside a checked checkbox. */
+const CHECKMARK_SVG = `<svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24"
+  stroke="currentColor" stroke-width="3">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+</svg>`;
+
+
+// ─────────────────────────────────────────────────────────────
+// UI STATE  (ephemeral — not persisted to localStorage)
+// ─────────────────────────────────────────────────────────────
+
+/** Currently selected weather option in the setup form. */
+let selectedWeather = 'warm';
+
+/** Emoji that will be assigned to the next new base-list category. */
+let newCategoryEmoji = '📦';
+
+/** Set of category IDs whose item list is currently collapsed in the planner. */
+let collapsedCategoryIds = new Set();
+
+/** Timestamp of the last explicit base-list save (null = never saved manually). */
+let baseListLastSaved = null;
+
+/** Handle for the active toast auto-dismiss timer. */
+let toastTimer = null;
+
+
+// ─────────────────────────────────────────────────────────────
+// PERSISTENCE LAYER
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Reads a JSON-encoded value from localStorage.
+ * Returns `fallback` when the key is absent or the stored JSON is corrupt,
+ * so the caller never has to guard against parse errors.
+ *
+ * @param {string} storageKey  - The localStorage key to read.
+ * @param {*}      fallback    - Value returned when the key is missing or invalid.
+ * @returns {*} Parsed value or fallback.
+ */
+function loadFromStorage(storageKey, fallback) {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (_parseError) {
+    return fallback;
+  }
+}
+
+/**
+ * Writes a single value to localStorage as a JSON string.
+ * Errors are silently swallowed (e.g. in private-browsing mode).
+ *
+ * @param {string} storageKey - The key to write to.
+ * @param {*}      value      - The value to serialise.
+ */
+function persistToStorage(storageKey, value) {
+  try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch (_) {}
+}
+
+/**
+ * Persists the entire app state to localStorage in a single pass.
+ * Called after every mutation so no explicit "Save" gesture is required
+ * for trip and base-list data.
+ */
+function persistAll() {
+  persistToStorage(STORAGE_KEYS.BASE_LIST,    state.baseList);
+  persistToStorage(STORAGE_KEYS.SAVED_TRIPS,  state.savedTrips);
+  persistToStorage(STORAGE_KEYS.CURRENT_TRIP, state.currentTrip);
+}
+
+/**
+ * Persists only the base list and records the save timestamp.
+ * Used by all base-list mutations so the save indicator stays accurate.
+ */
+function persistBaseList() {
+  persistAll();
+  baseListLastSaved = new Date();
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// DEFAULTS & DATA MIGRATION
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns the factory-default base list — the three Tenerife categories
+ * that serve as the starting point when localStorage is empty.
+ *
+ * @returns {Array<{id:string, emoji:string, name:string, items:string[]}>}
+ */
 function getDefaultBaseList() {
   return [
     {
@@ -108,73 +214,125 @@ function getDefaultBaseList() {
   ];
 }
 
-function migrateBaseList(data) {
-  if (!data) return getDefaultBaseList();
-  if (Array.isArray(data)) return data;
-  // Migrate old object format {health, documents, basics}
+/**
+ * Converts data loaded from localStorage to the current array format.
+ *
+ * v1 (legacy) stored the base list as a plain object:
+ *   { health: [...], documents: [...], basics: [...] }
+ *
+ * v2 (current) uses an ordered array of category objects so that users
+ * can add, remove, and reorder categories freely.
+ *
+ * @param {*} rawData - Whatever was stored in localStorage (or null).
+ * @returns {Array}   - A valid v2 base-list array.
+ */
+function migrateBaseListFormat(rawData) {
+  if (!rawData)              return getDefaultBaseList();   // First launch
+  if (Array.isArray(rawData)) return rawData;               // Already v2
+
+  // Migrate v1 object → v2 array
   return [
-    { id: 'health',    emoji: '🛡️', name: 'Gesundheit & Medikamente', items: data.health    || [] },
-    { id: 'documents', emoji: '📄', name: 'Dokumente & Wichtiges',     items: data.documents || [] },
-    { id: 'basics',    emoji: '⭐', name: 'Basics',                    items: data.basics    || [] },
+    { id: 'health',    emoji: '🛡️', name: 'Gesundheit & Medikamente', items: rawData.health    || [] },
+    { id: 'documents', emoji: '📄', name: 'Dokumente & Wichtiges',     items: rawData.documents || [] },
+    { id: 'basics',    emoji: '⭐', name: 'Basics',                    items: rawData.basics    || [] },
   ];
 }
 
-// ============================================================
-// STORAGE
-// ============================================================
-function loadFromStorage(key, fallback) {
-  try {
-    const v = localStorage.getItem(key);
-    return v ? JSON.parse(v) : fallback;
-  } catch(e) { return fallback; }
-}
 
-function persist(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch(e) {}
-}
+// ─────────────────────────────────────────────────────────────
+// APP STATE
+// ─────────────────────────────────────────────────────────────
 
-function saveAll() {
-  persist('packApp_baseList', state.baseList);
-  persist('packApp_savedTrips', state.savedTrips);
-  persist('packApp_currentTrip', state.currentTrip);
-}
+const state = {
+  currentTrip: loadFromStorage(STORAGE_KEYS.CURRENT_TRIP, null),
+  baseList:    migrateBaseListFormat(loadFromStorage(STORAGE_KEYS.BASE_LIST, null)),
+  savedTrips:  loadFromStorage(STORAGE_KEYS.SAVED_TRIPS, []),
+};
 
-// ============================================================
-// HELPERS
-// ============================================================
-function uid() {
+
+// ─────────────────────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────────────────────
+
+/** Generates a short, collision-resistant unique string ID. */
+function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
 
-function esc(text) {
-  const d = document.createElement('div');
-  d.appendChild(document.createTextNode(String(text)));
-  return d.innerHTML;
+/**
+ * Escapes `text` so it is safe to embed in innerHTML without XSS risk.
+ * Uses the browser's own text-node serialisation rather than a regex.
+ *
+ * @param   {string} text - Raw user-supplied string.
+ * @returns {string}       HTML-safe version.
+ */
+function escapeHtml(text) {
+  const node = document.createElement('div');
+  node.appendChild(document.createTextNode(String(text)));
+  return node.innerHTML;
 }
 
-function makeItems(arr) {
-  return arr.map(t => ({ id: uid(), text: t, checked: false }));
+/**
+ * Converts a plain string array into checklist item objects
+ * suitable for storage and rendering.
+ *
+ * @param   {string[]} textArray - Array of item label strings.
+ * @returns {{ id:string, text:string, checked:boolean }[]}
+ */
+function createItems(textArray) {
+  return textArray.map(text => ({ id: generateId(), text, checked: false }));
 }
 
-function getProgress(trip) {
+/**
+ * Computes how many items in a trip are checked vs. total.
+ *
+ * @param   {object|null} trip - A trip object from state.
+ * @returns {{ total:number, checked:number, pct:number }}
+ */
+function calculateProgress(trip) {
   if (!trip) return { total: 0, checked: 0, pct: 0 };
   let total = 0, checked = 0;
-  trip.categories.forEach(c => c.items.forEach(i => { total++; if (i.checked) checked++; }));
+  trip.categories.forEach(category =>
+    category.items.forEach(item => { total++; if (item.checked) checked++; })
+  );
   return { total, checked, pct: total ? Math.round((checked / total) * 100) : 0 };
 }
 
-// ============================================================
-// SMART CHECKLIST GENERATION
-// ============================================================
-function generateChecklist(cfg) {
-  const { name, days, weather, sports } = cfg;
-  const d = parseInt(days) || 7;
-  const cats = [];
 
-  // 1. Vorher sicherstellen
-  cats.push({
-    id: uid(), emoji: '⏳', name: 'Vorher sicherstellen',
-    items: makeItems([
+// ─────────────────────────────────────────────────────────────
+// SMART CHECKLIST GENERATOR
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Generates a complete trip checklist by merging two layers:
+ *
+ *  1. BASE LAYER — every category currently in state.baseList is copied
+ *     verbatim into the checklist (1:1 merge). This ensures custom
+ *     categories and user-edited items are always carried over.
+ *
+ *  2. SMART RULES LAYER — additional categories/items are added on top
+ *     based on the trip configuration:
+ *       • Always added:   ⏳ Vorher sicherstellen, 👕 Anziehsachen, 🔌 Elektronik
+ *       • Weather = warm: 🏊 Schwimmen  (+ UV-protection items)
+ *       • Sport = true:   🏃 Sport  +  Polar charger in Elektronik
+ *
+ *  Dynamic quantities (clothing):
+ *       Socken & Unterhosen = days + 1
+ *       T-Shirts            = days
+ *       Poloshirts          = ⌈days / 2⌉
+ *
+ * @param {{ name:string, days:number|string, weather:'warm'|'cold', sports:boolean }} tripConfig
+ * @returns {object} A fully populated trip object ready for state.currentTrip.
+ */
+function generateChecklist(tripConfig) {
+  const { name, weather, sports } = tripConfig;
+  const durationDays = parseInt(tripConfig.days) || 7;
+  const categories   = [];
+
+  // ── 1. Pre-trip to-do list (always first) ────────────────────
+  categories.push({
+    id: generateId(), emoji: '⏳', name: 'Vorher sicherstellen',
+    items: createItems([
       'Download Videos und Schulungen auf das Handy (Yellowstone, Udemy AI)',
       'Checken ob die TUI-App funktioniert (brauchen wir für den Privattransfer)',
       'Bagtap aktivieren',
@@ -182,31 +340,30 @@ function generateChecklist(cfg) {
     ]),
   });
 
-  // 2. ALLE Basislisten-Kategorien 1:1 als Fundament (vor den Smart Rules)
-  state.baseList.forEach(baseCat => {
-    cats.push({
-      id: uid(),
-      emoji: baseCat.emoji,
-      name:  baseCat.name,
-      items: makeItems([...baseCat.items]),
+  // ── 2. Base layer: all base-list categories merged 1:1 ───────
+  state.baseList.forEach(baseCategory => {
+    categories.push({
+      id:    generateId(),
+      emoji: baseCategory.emoji,
+      name:  baseCategory.name,
+      items: createItems([...baseCategory.items]),
     });
   });
 
-  // ── Smart Rules ──────────────────────────────────────────────
+  // ── Smart Rules ───────────────────────────────────────────────
 
-  // 3. Anziehsachen (dynamische Mengen)
-  const socken     = d + 1;
-  const unterhosen = d + 1;
-  const tshirts    = d;
-  const polos      = Math.ceil(d / 2);
+  // 3. Clothing with dynamic quantities
+  const socksCount  = durationDays + 1;
+  const tShirtCount = durationDays;
+  const poloCount   = Math.ceil(durationDays / 2);
 
-  cats.push({
-    id: uid(), emoji: '👕', name: 'Anziehsachen',
-    items: makeItems([
-      `Socken (${socken} Paar)`,
-      `Unterhosen (${unterhosen} Stück)`,
-      `T-Shirts (${tshirts} Stück)`,
-      `Poloshirts (${polos} Stück)`,
+  categories.push({
+    id: generateId(), emoji: '👕', name: 'Anziehsachen',
+    items: createItems([
+      `Socken (${socksCount} Paar)`,
+      `Unterhosen (${socksCount} Stück)`,
+      `T-Shirts (${tShirtCount} Stück)`,
+      `Poloshirts (${poloCount} Stück)`,
       'Jacke (Super Dry)',
       'Buff (Schal)',
       '1 lange Hose',
@@ -214,36 +371,34 @@ function generateChecklist(cfg) {
     ]),
   });
 
-  // 4. Elektronik (immer)
-  const elektronik = [
-    'Handy (Geschäft)',
-    'Handy (privat)',
-    'Laptop',
-    'Kindle',
-    'Kopfhörer',
-    'Ladekabel Handy',
-    'Ladekabel Laptop',
-    'Ladekabel Kindle',
+  // 4. Electronics — Polar charger added only when sports is active
+  const electronicsItems = [
+    'Handy (Geschäft)', 'Handy (privat)', 'Laptop', 'Kindle',
+    'Kopfhörer', 'Ladekabel Handy', 'Ladekabel Laptop', 'Ladekabel Kindle',
   ];
-  if (sports) elektronik.push('Ladegerät Herzfrequenzmessung & Polar Uhr');
-  cats.push({ id: uid(), emoji: '🔌', name: 'Elektronik', items: makeItems(elektronik) });
+  if (sports) electronicsItems.push('Ladegerät Herzfrequenzmessung & Polar Uhr');
 
-  // 5. Schwimmen (nur bei warmem Wetter)
+  categories.push({
+    id: generateId(), emoji: '🔌', name: 'Elektronik',
+    items: createItems(electronicsItems),
+  });
+
+  // 5. Swimming gear + sun protection (warm weather only)
   if (weather === 'warm') {
-    cats.push({
-      id: uid(), emoji: '🏊‍♂️', name: 'Schwimmen',
-      items: makeItems([
+    categories.push({
+      id: generateId(), emoji: '🏊‍♂️', name: 'Schwimmen',
+      items: createItems([
         'Badehose', 'Pull-Buoy', 'Schwimmbrille inkl. Anti-Beschlag Spray',
         'Badelatschen', 'UV-Schutz T-Shirt', 'Sonnenmilch Gesicht', 'Sonnenmilch Körper',
       ]),
     });
   }
 
-  // 6. Sport (wenn ausgewählt)
+  // 6. Running gear (sports checkbox only)
   if (sports) {
-    cats.push({
-      id: uid(), emoji: '🏃‍♂️', name: 'Sport',
-      items: makeItems([
+    categories.push({
+      id: generateId(), emoji: '🏃‍♂️', name: 'Sport',
+      items: createItems([
         'Laufhose', 'Laufshirt', 'Pulsmesser', 'Laufschuhe',
         'Laufsocken', 'Laufjacke', 'Laufunterhose', 'Studio? (prüfen)',
       ]),
@@ -251,242 +406,376 @@ function generateChecklist(cfg) {
   }
 
   return {
-    id: uid(),
+    id:         generateId(),
     name,
-    days: d,
+    days:       durationDays,
     weather,
     sports,
-    categories: cats,
-    createdAt: new Date().toISOString(),
+    categories,
+    createdAt:  new Date().toISOString(),
   };
 }
 
-// ============================================================
-// TAB SWITCHING
-// ============================================================
-function setTab(tab) {
-  state.activeTab = tab;
-  ['planner', 'baselist', 'archive'].forEach(t => {
-    document.getElementById(`content-${t}`).classList.toggle('hidden', t !== tab);
-    const btn = document.getElementById(`tab-${t}`);
-    btn.className = btn.className.replace(/tab-active|tab-inactive/g, '').trim();
-    btn.classList.add(t === tab ? 'tab-active' : 'tab-inactive');
-  });
-  if (tab === 'planner')  renderPlanner();
-  if (tab === 'baselist') renderBaseList();
-  if (tab === 'archive')  renderArchive();
-}
 
-// ============================================================
-// WEATHER SELECTION (called from onclick in setup form)
-// ============================================================
-function selectWeather(w) {
-  setupWeather = w;
-  const warmEl = document.getElementById('wbtn-warm');
-  const coldEl = document.getElementById('wbtn-cold');
-  if (!warmEl || !coldEl) return;
-  if (w === 'warm') {
-    warmEl.classList.add('border-indigo-500', 'bg-indigo-50');
-    warmEl.classList.remove('border-gray-200', 'bg-white');
-    coldEl.classList.add('border-gray-200', 'bg-white');
-    coldEl.classList.remove('border-indigo-500', 'bg-indigo-50');
-  } else {
-    coldEl.classList.add('border-indigo-500', 'bg-indigo-50');
-    coldEl.classList.remove('border-gray-200', 'bg-white');
-    warmEl.classList.add('border-gray-200', 'bg-white');
-    warmEl.classList.remove('border-indigo-500', 'bg-indigo-50');
-  }
-}
+// ─────────────────────────────────────────────────────────────
+// TRIP MANAGEMENT
+// ─────────────────────────────────────────────────────────────
 
-// ============================================================
-// CREATE TRIP
-// ============================================================
+/** Reads the setup form values, generates a new checklist, and opens it. */
 function createTrip() {
-  const nameEl  = document.getElementById('f-name');
-  const daysEl  = document.getElementById('f-days');
-  const sportsEl = document.getElementById('f-sports');
-  if (!nameEl || !daysEl) return;
+  const nameInput   = document.getElementById('f-name');
+  const daysInput   = document.getElementById('f-days');
+  const sportsInput = document.getElementById('f-sports');
+  if (!nameInput || !daysInput) return;
 
-  const name   = nameEl.value.trim() || 'Meine Reise';
-  const days   = parseInt(daysEl.value) || 7;
-  const sports = sportsEl ? sportsEl.checked : false;
+  state.currentTrip = generateChecklist({
+    name:   nameInput.value.trim() || 'Meine Reise',
+    days:   parseInt(daysInput.value) || 7,
+    weather: selectedWeather,
+    sports: sportsInput ? sportsInput.checked : false,
+  });
 
-  state.currentTrip = generateChecklist({ name, days, weather: setupWeather, sports });
-  collapsedCats.clear();
-  saveAll();
+  collapsedCategoryIds.clear();
+  persistAll();
   renderPlanner();
 }
 
-function newTrip() {
-  if (!confirm('Aktuelle Reise verwerfen und neue erstellen?')) return;
-  state.currentTrip = null;
-  persist('packApp_currentTrip', null);
-  renderPlanner();
-}
-
+/** Upserts the current trip into the savedTrips archive, then persists. */
 function saveCurrentTrip() {
   if (!state.currentTrip) return;
-  const idx = state.savedTrips.findIndex(t => t.id === state.currentTrip.id);
-  if (idx >= 0) state.savedTrips[idx] = JSON.parse(JSON.stringify(state.currentTrip));
-  else          state.savedTrips.push(JSON.parse(JSON.stringify(state.currentTrip)));
-  saveAll();
+  const existingIndex = state.savedTrips.findIndex(t => t.id === state.currentTrip.id);
+  const tripSnapshot  = JSON.parse(JSON.stringify(state.currentTrip));
+
+  if (existingIndex >= 0) state.savedTrips[existingIndex] = tripSnapshot;
+  else                    state.savedTrips.push(tripSnapshot);
+
+  persistAll();
   showToast('💾 Reise gespeichert!');
 }
 
-// ============================================================
-// CHECKLIST ACTIONS
-// ============================================================
-function toggleItem(catId, itemId) {
+/** Clears the active trip after a confirmation prompt. */
+function newTrip() {
+  if (!confirm('Aktuelle Reise verwerfen und neue erstellen?')) return;
+  state.currentTrip = null;
+  persistToStorage(STORAGE_KEYS.CURRENT_TRIP, null);
+  renderPlanner();
+}
+
+/**
+ * Loads a saved trip from the archive into the active planner.
+ * @param {string} tripId - ID of the trip to restore.
+ */
+function loadTrip(tripId) {
+  const trip = state.savedTrips.find(t => t.id === tripId);
+  if (!trip) return;
+  if (state.currentTrip && state.currentTrip.id !== tripId) {
+    if (!confirm('Aktuelle Reise durch diese ersetzen?')) return;
+  }
+  state.currentTrip = JSON.parse(JSON.stringify(trip));
+  collapsedCategoryIds.clear();
+  persistAll();
+  setTab('planner');
+  showToast(`📂 "${trip.name}" geladen!`);
+}
+
+/**
+ * Permanently removes a trip from the archive.
+ * @param {string} tripId - ID of the trip to delete.
+ */
+function deleteTrip(tripId) {
+  const trip = state.savedTrips.find(t => t.id === tripId);
+  if (!trip || !confirm(`"${trip.name}" wirklich löschen?`)) return;
+  state.savedTrips = state.savedTrips.filter(t => t.id !== tripId);
+  if (state.currentTrip?.id === tripId) state.currentTrip = null;
+  persistAll();
+  renderArchive();
+  showToast('🗑️ Reise gelöscht!');
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// CHECKLIST INTERACTIONS
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Toggles the checked state of a single item.
+ * Uses targeted DOM updates (instead of full re-render) to stay fast.
+ *
+ * @param {string} categoryId - ID of the parent category.
+ * @param {string} itemId     - ID of the item to toggle.
+ */
+function toggleItem(categoryId, itemId) {
   if (!state.currentTrip) return;
-  const cat  = state.currentTrip.categories.find(c => c.id === catId);
-  const item = cat && cat.items.find(i => i.id === itemId);
+
+  const category = state.currentTrip.categories.find(c => c.id === categoryId);
+  const item     = category?.items.find(i => i.id === itemId);
   if (!item) return;
+
   item.checked = !item.checked;
-  saveAll();
+  persistAll();
 
-  // Fast DOM update instead of full re-render
-  const cb   = document.getElementById(`cb-${itemId}`);
-  const span = document.getElementById(`sp-${itemId}`);
-  if (cb) cb.className = cb.className.replace(/\bchecked\b/g, '').trim() + (item.checked ? ' checked' : '');
-  if (span) span.className = item.checked ? 'flex-1 text-sm item-checked' : 'flex-1 text-sm text-gray-700';
-
-  // Update progress bar
-  updateProgressUI();
-}
-
-function updateProgressUI() {
-  const prog = getProgress(state.currentTrip);
-  const bar  = document.getElementById('prog-bar');
-  const lbl  = document.getElementById('prog-lbl');
-  const pct  = document.getElementById('prog-pct');
-  const msg  = document.getElementById('prog-msg');
-  if (bar)  bar.style.width  = prog.pct + '%';
-  if (lbl)  lbl.textContent  = `${prog.checked} / ${prog.total} erledigt`;
-  if (pct)  pct.textContent  = prog.pct + '%';
-  if (msg)  msg.className    = prog.pct === 100 ? 'text-center text-green-600 font-bold mt-2 text-sm' : 'hidden';
-}
-
-function addItemToCategory(catId) {
-  if (!state.currentTrip) return;
-  const inp = document.getElementById(`inp-${catId}`);
-  if (!inp || !inp.value.trim()) return;
-  const text = inp.value.trim();
-  inp.value = '';
-  const cat = state.currentTrip.categories.find(c => c.id === catId);
-  if (!cat) return;
-  const item = { id: uid(), text, checked: false };
-  cat.items.push(item);
-  saveAll();
-
-  // Append item to DOM
-  const list = document.getElementById(`list-${catId}`);
-  if (list) {
-    const div = document.createElement('div');
-    div.id = `row-${item.id}`;
-    div.className = 'flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors item-row';
-    div.innerHTML = buildItemHTML(catId, item);
-    list.appendChild(div);
-    updateProgressUI();
-    // Update category counter
-    const counter = document.getElementById(`cnt-${catId}`);
-    if (counter) {
-      const checked = cat.items.filter(i => i.checked).length;
-      counter.textContent = `${checked}/${cat.items.length}`;
-    }
+  // Update checkbox appearance
+  const checkboxEl = document.getElementById(`cb-${itemId}`);
+  const labelEl    = document.getElementById(`sp-${itemId}`);
+  if (checkboxEl) {
+    checkboxEl.classList.toggle('is-checked', item.checked);
+    checkboxEl.innerHTML = item.checked ? CHECKMARK_SVG : '';
   }
-  inp.focus();
+  if (labelEl) {
+    labelEl.className = item.checked
+      ? 'flex-1 text-sm item-checked'
+      : 'flex-1 text-sm text-gray-700';
+  }
+
+  updateProgressDisplay();
 }
 
-function deleteItem(catId, itemId) {
+/** Redraws the progress bar and counters without a full re-render. */
+function updateProgressDisplay() {
+  const progress = calculateProgress(state.currentTrip);
+
+  const barEl = document.getElementById('prog-bar');
+  const lblEl = document.getElementById('prog-lbl');
+  const pctEl = document.getElementById('prog-pct');
+  const msgEl = document.getElementById('prog-msg');
+
+  if (barEl) barEl.style.width     = `${progress.pct}%`;
+  if (lblEl) lblEl.textContent     = `${progress.checked} / ${progress.total} erledigt`;
+  if (pctEl) pctEl.textContent     = `${progress.pct}%`;
+  if (msgEl) msgEl.className       =
+    progress.pct === 100
+      ? 'text-center text-green-600 font-bold mt-2 text-sm'
+      : 'hidden';
+}
+
+/**
+ * Reads the "add item" input for a category, creates a new item,
+ * appends it to the DOM directly (no full re-render), and persists.
+ *
+ * @param {string} categoryId - ID of the category to receive the new item.
+ */
+function addItemToCategory(categoryId) {
   if (!state.currentTrip) return;
-  const cat = state.currentTrip.categories.find(c => c.id === catId);
-  if (!cat) return;
-  cat.items = cat.items.filter(i => i.id !== itemId);
-  saveAll();
-  const row = document.getElementById(`row-${itemId}`);
-  if (row) row.remove();
-  updateProgressUI();
-  const counter = document.getElementById(`cnt-${catId}`);
-  if (counter) {
-    const checked = cat.items.filter(i => i.checked).length;
-    counter.textContent = `${checked}/${cat.items.length}`;
+
+  const inputEl = document.getElementById(`inp-${categoryId}`);
+  if (!inputEl || !inputEl.value.trim()) return;
+
+  const newText = inputEl.value.trim();
+  inputEl.value = '';
+
+  const category = state.currentTrip.categories.find(c => c.id === categoryId);
+  if (!category) return;
+
+  const newItem = { id: generateId(), text: newText, checked: false };
+  category.items.push(newItem);
+  persistAll();
+
+  // Append row to DOM without triggering a full re-render
+  const listEl = document.getElementById(`list-${categoryId}`);
+  if (listEl) {
+    const rowEl = document.createElement('div');
+    rowEl.id        = `row-${newItem.id}`;
+    rowEl.className = 'flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors item-row';
+    rowEl.innerHTML = buildCheckboxItemHtml(categoryId, newItem);
+    listEl.appendChild(rowEl);
+  }
+
+  // Sync the category counter badge
+  refreshCategoryCounter(categoryId);
+  updateProgressDisplay();
+  inputEl.focus();
+}
+
+/**
+ * Removes an item from a category, updates the DOM, and persists.
+ *
+ * @param {string} categoryId - ID of the parent category.
+ * @param {string} itemId     - ID of the item to remove.
+ */
+function deleteItem(categoryId, itemId) {
+  if (!state.currentTrip) return;
+
+  const category = state.currentTrip.categories.find(c => c.id === categoryId);
+  if (!category) return;
+
+  category.items = category.items.filter(i => i.id !== itemId);
+  persistAll();
+
+  document.getElementById(`row-${itemId}`)?.remove();
+  refreshCategoryCounter(categoryId);
+  updateProgressDisplay();
+}
+
+/**
+ * Collapses or expands a category card in the planner.
+ * @param {string} categoryId - ID of the category to toggle.
+ */
+function toggleCategory(categoryId) {
+  if (collapsedCategoryIds.has(categoryId)) collapsedCategoryIds.delete(categoryId);
+  else                                      collapsedCategoryIds.add(categoryId);
+
+  document.getElementById(`catbody-${categoryId}`)?.classList.toggle('hidden');
+  const iconEl = document.getElementById(`caticon-${categoryId}`);
+  if (iconEl) iconEl.textContent = collapsedCategoryIds.has(categoryId) ? '▶' : '▼';
+}
+
+/**
+ * Updates the "x/y" counter badge on a category header.
+ * Called after DOM-level item additions or deletions.
+ *
+ * @param {string} categoryId
+ */
+function refreshCategoryCounter(categoryId) {
+  const category  = state.currentTrip?.categories.find(c => c.id === categoryId);
+  const counterEl = document.getElementById(`cnt-${categoryId}`);
+  if (!category || !counterEl) return;
+  const checkedCount = category.items.filter(i => i.checked).length;
+  counterEl.textContent = `${checkedCount}/${category.items.length}`;
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// WEATHER SELECTION  (Setup Form)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Updates both the module-level `selectedWeather` variable and the
+ * visual highlight of the weather toggle buttons.
+ *
+ * @param {'warm'|'cold'} weather
+ */
+function selectWeather(weather) {
+  selectedWeather = weather;
+
+  const warmBtn = document.getElementById('wbtn-warm');
+  const coldBtn = document.getElementById('wbtn-cold');
+  if (!warmBtn || !coldBtn) return;
+
+  const activeClasses   = ['border-indigo-500', 'bg-indigo-50'];
+  const inactiveClasses = ['border-gray-200',   'bg-white'];
+
+  if (weather === 'warm') {
+    warmBtn.classList.add(...activeClasses);    warmBtn.classList.remove(...inactiveClasses);
+    coldBtn.classList.add(...inactiveClasses);  coldBtn.classList.remove(...activeClasses);
+  } else {
+    coldBtn.classList.add(...activeClasses);    coldBtn.classList.remove(...inactiveClasses);
+    warmBtn.classList.add(...inactiveClasses);  warmBtn.classList.remove(...activeClasses);
   }
 }
 
-function toggleCategory(catId) {
-  if (collapsedCats.has(catId)) collapsedCats.delete(catId);
-  else collapsedCats.add(catId);
-  const body = document.getElementById(`catbody-${catId}`);
-  const icon = document.getElementById(`caticon-${catId}`);
-  if (!body) return;
-  body.classList.toggle('hidden');
-  if (icon) icon.textContent = collapsedCats.has(catId) ? '▶' : '▼';
+
+// ─────────────────────────────────────────────────────────────
+// TAB NAVIGATION
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Switches the visible tab panel and re-renders its content.
+ * @param {'planner'|'baselist'|'archive'} tabName
+ */
+function setTab(tabName) {
+  const TAB_NAMES = ['planner', 'baselist', 'archive'];
+
+  TAB_NAMES.forEach(name => {
+    document.getElementById(`content-${name}`).classList.toggle('hidden', name !== tabName);
+
+    const btnEl = document.getElementById(`tab-${name}`);
+    btnEl.className = btnEl.className.replace(/tab-active|tab-inactive/g, '').trim();
+    btnEl.classList.add(name === tabName ? 'tab-active' : 'tab-inactive');
+  });
+
+  if (tabName === 'planner')  renderPlanner();
+  if (tabName === 'baselist') renderBaseList();
+  if (tabName === 'archive')  renderArchive();
 }
 
-// ============================================================
-// BUILD ITEM HTML
-// ============================================================
-function buildItemHTML(catId, item) {
-  const cbCls = 'checkbox-custom' + (item.checked ? ' checked' : '');
-  const spCls = item.checked ? 'flex-1 text-sm item-checked' : 'flex-1 text-sm text-gray-700';
-  const checkSvg = `<svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`;
+
+// ─────────────────────────────────────────────────────────────
+// RENDER: PLANNER TAB
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Builds the inner HTML for a single checklist item row (checkbox + label + delete).
+ * IDs follow the pattern `cb-{itemId}` and `sp-{itemId}` so toggleItem()
+ * can update individual rows without re-rendering the whole list.
+ *
+ * @param {string} categoryId
+ * @param {{ id:string, text:string, checked:boolean }} item
+ * @returns {string} HTML string (safe to inject via innerHTML).
+ */
+function buildCheckboxItemHtml(categoryId, item) {
+  const checkboxClass = `checkbox${item.checked ? ' is-checked' : ''}`;
+  const labelClass    = item.checked ? 'flex-1 text-sm item-checked' : 'flex-1 text-sm text-gray-700';
+
   return `
-    <div id="${esc(`cb-${item.id}`)}" class="${cbCls}" onclick="toggleItem('${esc(catId)}','${esc(item.id)}')" role="checkbox" aria-checked="${item.checked}">
-      ${item.checked ? checkSvg : ''}
+    <div id="cb-${escapeHtml(item.id)}" class="${checkboxClass}"
+         onclick="toggleItem('${escapeHtml(categoryId)}','${escapeHtml(item.id)}')"
+         role="checkbox" aria-checked="${item.checked}">
+      ${item.checked ? CHECKMARK_SVG : ''}
     </div>
-    <span id="${esc(`sp-${item.id}`)}" class="${spCls}" onclick="toggleItem('${esc(catId)}','${esc(item.id)}')" style="cursor:pointer">${esc(item.text)}</span>
-    <button onclick="deleteItem('${esc(catId)}','${esc(item.id)}')" class="delete-btn text-red-400 hover:text-red-600 text-xl leading-none px-1 flex-shrink-0" title="Löschen">×</button>
+    <span id="sp-${escapeHtml(item.id)}" class="${labelClass}"
+          onclick="toggleItem('${escapeHtml(categoryId)}','${escapeHtml(item.id)}')"
+          style="cursor:pointer">
+      ${escapeHtml(item.text)}
+    </span>
+    <button onclick="deleteItem('${escapeHtml(categoryId)}','${escapeHtml(item.id)}')"
+            class="delete-btn text-red-400 hover:text-red-600 text-xl leading-none px-1 flex-shrink-0"
+            title="Löschen">×</button>
   `;
 }
 
-// ============================================================
-// RENDER PLANNER
-// ============================================================
+/** Renders the planner tab: either the setup form or the active checklist. */
 function renderPlanner() {
-  const c = document.getElementById('content-planner');
-  if (!c) return;
+  const panelEl = document.getElementById('content-planner');
+  if (!panelEl) return;
 
   if (!state.currentTrip) {
-    c.innerHTML = renderSetupFormHTML();
+    panelEl.innerHTML = buildSetupFormHtml();
     return;
   }
 
-  const trip = state.currentTrip;
-  const prog = getProgress(trip);
-  const barColor = prog.pct === 100 ? 'bg-green-500' : 'bg-indigo-500';
-  const pctColor = prog.pct === 100 ? 'text-green-600' : 'text-indigo-600';
+  const trip     = state.currentTrip;
+  const progress = calculateProgress(trip);
+  const isDone   = progress.pct === 100;
 
   let html = `
-    <!-- Trip Header -->
+    <!-- ── Trip Header ─────────────────────────────── -->
     <div class="bg-white rounded-2xl shadow-sm p-4 mb-4 fade-in">
+
       <div class="flex items-start justify-between mb-3 gap-2">
         <div>
-          <h2 class="text-lg font-bold text-gray-800">${esc(trip.name)}</h2>
+          <h2 class="text-lg font-bold text-gray-800">${escapeHtml(trip.name)}</h2>
           <p class="text-xs text-gray-400 mt-0.5">
-            ${trip.days} Tage &middot; ${trip.weather === 'warm' ? '☀️ Warm' : '❄️ Kalt'}${trip.sports ? ' &middot; 🏃 Sport' : ''}
+            ${trip.days} Tage &middot; ${trip.weather === 'warm' ? '☀️ Warm' : '❄️ Kalt'}
+            ${trip.sports ? ' &middot; 🏃 Sport' : ''}
           </p>
         </div>
         <div class="flex gap-2 flex-shrink-0">
-          <button onclick="saveCurrentTrip()" class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-emerald-100 transition-colors">
+          <button onclick="saveCurrentTrip()"
+            class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-emerald-100 transition-colors">
             💾 Speichern
           </button>
-          <button onclick="newTrip()" class="bg-gray-50 text-gray-500 border border-gray-200 px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-gray-100 transition-colors">
+          <button onclick="newTrip()"
+            class="bg-gray-50 text-gray-500 border border-gray-200 px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-gray-100 transition-colors">
             ✕ Neu
           </button>
         </div>
       </div>
 
-      <!-- Progress -->
+      <!-- Progress Bar -->
       <div class="flex justify-between items-center mb-1.5 text-sm">
-        <span id="prog-lbl" class="text-gray-500 font-medium">${prog.checked} / ${prog.total} erledigt</span>
-        <span id="prog-pct" class="font-bold ${pctColor}">${prog.pct}%</span>
+        <span id="prog-lbl" class="text-gray-500 font-medium">${progress.checked} / ${progress.total} erledigt</span>
+        <span id="prog-pct" class="font-bold ${isDone ? 'text-green-600' : 'text-indigo-600'}">${progress.pct}%</span>
       </div>
       <div class="bg-gray-100 rounded-full h-3 overflow-hidden">
-        <div id="prog-bar" class="h-full rounded-full ${barColor} progress-bar-fill" style="width:${prog.pct}%"></div>
+        <div id="prog-bar"
+             class="h-full rounded-full ${isDone ? 'bg-green-500' : 'bg-indigo-500'} progress-bar"
+             style="width:${progress.pct}%"></div>
       </div>
-      <div id="prog-msg" class="${prog.pct === 100 ? 'text-center text-green-600 font-bold mt-2 text-sm' : 'hidden'}">🎉 Alles eingepackt! Gute Reise!</div>
+      <div id="prog-msg" class="${isDone ? 'text-center text-green-600 font-bold mt-2 text-sm' : 'hidden'}">
+        🎉 Alles eingepackt! Gute Reise!
+      </div>
 
-      <!-- Obsidian Export -->
+      <!-- Obsidian Export Button -->
       <button onclick="exportToObsidian()"
         class="mt-3 w-full bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white rounded-xl py-3 font-bold text-sm transition-colors flex items-center justify-center gap-2 shadow-md shadow-violet-200">
         📥 Für Obsidian exportieren (.md)
@@ -494,154 +783,164 @@ function renderPlanner() {
     </div>
   `;
 
-  // Categories
-  trip.categories.forEach(cat => {
-    const checked = cat.items.filter(i => i.checked).length;
-    const isCollapsed = collapsedCats.has(cat.id);
-    const allDone = checked === cat.items.length && cat.items.length > 0;
-    const catBg = allDone ? 'from-emerald-50 to-green-50' : 'from-indigo-50 to-sky-50';
-    const cntColor = allDone ? 'text-emerald-600 bg-emerald-100' : 'text-indigo-600 bg-indigo-50';
+  // ── Category Cards ──────────────────────────────────────────
+  trip.categories.forEach(category => {
+    const checkedCount  = category.items.filter(i => i.checked).length;
+    const isCollapsed   = collapsedCategoryIds.has(category.id);
+    const allItemsDone  = checkedCount === category.items.length && category.items.length > 0;
+
+    const headerGradient = allItemsDone ? 'from-emerald-50 to-green-50'   : 'from-indigo-50 to-sky-50';
+    const counterStyle   = allItemsDone ? 'text-emerald-600 bg-emerald-100' : 'text-indigo-600 bg-indigo-50';
 
     html += `
       <div class="bg-white rounded-2xl shadow-sm mb-3 overflow-hidden fade-in">
-        <!-- Category Header -->
-        <div class="px-4 py-3 bg-gradient-to-r ${catBg} flex items-center justify-between cursor-pointer select-none"
-             onclick="toggleCategory('${cat.id}')">
+
+        <!-- Category Header (click to collapse/expand) -->
+        <div class="px-4 py-3 bg-gradient-to-r ${headerGradient} flex items-center justify-between cursor-pointer select-none"
+             onclick="toggleCategory('${category.id}')">
           <div class="flex items-center gap-2">
-            <span class="text-base">${cat.emoji}</span>
-            <h3 class="font-bold text-gray-700 text-sm">${esc(cat.name)}</h3>
+            <span class="text-base">${category.emoji}</span>
+            <h3 class="font-bold text-gray-700 text-sm">${escapeHtml(category.name)}</h3>
           </div>
           <div class="flex items-center gap-2">
-            <span id="cnt-${cat.id}" class="text-xs font-semibold ${cntColor} px-2 py-0.5 rounded-full">
-              ${checked}/${cat.items.length}
+            <span id="cnt-${category.id}" class="text-xs font-semibold ${counterStyle} px-2 py-0.5 rounded-full">
+              ${checkedCount}/${category.items.length}
             </span>
-            <span id="caticon-${cat.id}" class="text-gray-400 text-xs">${isCollapsed ? '▶' : '▼'}</span>
+            <span id="caticon-${category.id}" class="text-gray-400 text-xs">${isCollapsed ? '▶' : '▼'}</span>
           </div>
         </div>
 
-        <!-- Items -->
-        <div id="catbody-${cat.id}" class="${isCollapsed ? 'hidden' : ''}">
-          <div id="list-${cat.id}" class="divide-y divide-gray-50">
-            ${cat.items.map(item => `
-              <div id="row-${item.id}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors item-row">
-                ${buildItemHTML(cat.id, item)}
+        <!-- Item List + Add Input -->
+        <div id="catbody-${category.id}" class="${isCollapsed ? 'hidden' : ''}">
+          <div id="list-${category.id}" class="divide-y divide-gray-50">
+            ${category.items.map(item => `
+              <div id="row-${item.id}"
+                   class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors item-row">
+                ${buildCheckboxItemHtml(category.id, item)}
               </div>
             `).join('')}
           </div>
 
-          <!-- Add Item Input -->
           <div class="px-4 py-2.5 border-t border-gray-100 flex items-center gap-2">
             <input type="text"
-              id="inp-${cat.id}"
+              id="inp-${category.id}"
               placeholder="+ Element hinzufügen …"
               class="flex-1 text-sm text-gray-600 placeholder-gray-400 bg-transparent outline-none py-0.5 min-w-0"
-              onkeydown="if(event.key==='Enter'){addItemToCategory('${cat.id}')}"
-            >
-            <button onclick="addItemToCategory('${cat.id}')"
+              onkeydown="if(event.key==='Enter') addItemToCategory('${category.id}')">
+            <button onclick="addItemToCategory('${category.id}')"
               class="text-indigo-400 hover:text-indigo-600 text-xs font-semibold flex-shrink-0 transition-colors">
               Hinzufügen
             </button>
           </div>
         </div>
+
       </div>
     `;
   });
 
-  c.innerHTML = html;
+  panelEl.innerHTML = html;
 }
 
-// ============================================================
-// RENDER SETUP FORM
-// ============================================================
-function renderSetupFormHTML() {
-  const warmActive = setupWeather === 'warm';
-  const coldActive = !warmActive;
-  const wWarm = `border-2 rounded-xl p-3 cursor-pointer flex items-center gap-3 transition-all ${warmActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white'}`;
-  const wCold = `border-2 rounded-xl p-3 cursor-pointer flex items-center gap-3 transition-all ${coldActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white'}`;
+/**
+ * Builds the HTML for the "new trip" setup form.
+ * Reads `selectedWeather` to pre-highlight the correct weather button.
+ *
+ * @returns {string} HTML string.
+ */
+function buildSetupFormHtml() {
+  const warmActive = selectedWeather === 'warm';
+  const warmClass  = `border-2 rounded-xl p-3 cursor-pointer flex items-center gap-3 transition-all ${warmActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white'}`;
+  const coldClass  = `border-2 rounded-xl p-3 cursor-pointer flex items-center gap-3 transition-all ${!warmActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white'}`;
 
   return `
     <div class="bg-white rounded-2xl shadow-sm p-5 fade-in">
       <h2 class="text-xl font-bold text-gray-800 mb-5">🗺️ Neue Reise planen</h2>
 
       <div class="space-y-4">
-        <!-- Name -->
+
+        <!-- Trip name -->
         <div>
           <label class="block text-sm font-semibold text-gray-600 mb-1.5">Reisename</label>
           <input type="text" id="f-name" value="Teneriffa 2026" placeholder="z.B. Teneriffa 2026"
             class="w-full border-2 border-gray-100 focus:border-indigo-300 rounded-xl px-4 py-2.5 text-sm outline-none transition-colors bg-gray-50 focus:bg-white">
         </div>
 
-        <!-- Days -->
+        <!-- Duration -->
         <div>
           <label class="block text-sm font-semibold text-gray-600 mb-1.5">Dauer in Tagen</label>
           <input type="number" id="f-days" value="10" min="1" max="365"
             class="w-full border-2 border-gray-100 focus:border-indigo-300 rounded-xl px-4 py-2.5 text-sm outline-none transition-colors bg-gray-50 focus:bg-white">
-          <p class="text-xs text-gray-400 mt-1">Beeinflusst Mengen: Socken & Unterhosen = Tage+1, T-Shirts = Tage, Poloshirts = ⌈Tage/2⌉</p>
+          <p class="text-xs text-gray-400 mt-1">
+            Socken &amp; Unterhosen = Tage+1 &nbsp;·&nbsp; T-Shirts = Tage &nbsp;·&nbsp; Poloshirts = ⌈Tage/2⌉
+          </p>
         </div>
 
-        <!-- Weather -->
+        <!-- Weather selector -->
         <div>
           <label class="block text-sm font-semibold text-gray-600 mb-1.5">Wetter</label>
           <div class="grid grid-cols-2 gap-3">
-            <div id="wbtn-warm" class="${wWarm}" onclick="selectWeather('warm')">
+            <div id="wbtn-warm" class="${warmClass}" onclick="selectWeather('warm')">
               <span class="text-2xl">☀️</span>
               <div>
                 <p class="text-sm font-semibold text-gray-700">Warm</p>
-                <p class="text-xs text-gray-400">Strand & Sommer</p>
+                <p class="text-xs text-gray-400">Strand &amp; Sommer</p>
               </div>
             </div>
-            <div id="wbtn-cold" class="${wCold}" onclick="selectWeather('cold')">
+            <div id="wbtn-cold" class="${coldClass}" onclick="selectWeather('cold')">
               <span class="text-2xl">❄️</span>
               <div>
                 <p class="text-sm font-semibold text-gray-700">Kalt</p>
-                <p class="text-xs text-gray-400">Herbst & Winter</p>
+                <p class="text-xs text-gray-400">Herbst &amp; Winter</p>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Sports -->
+        <!-- Sports checkbox -->
         <div onclick="document.getElementById('f-sports').click()"
              class="flex items-center gap-3 p-3.5 border-2 border-gray-100 rounded-xl cursor-pointer hover:border-indigo-200 hover:bg-indigo-50/30 transition-all select-none">
-          <input type="checkbox" id="f-sports" checked class="w-4 h-4 accent-indigo-600 cursor-pointer" onclick="event.stopPropagation()">
+          <input type="checkbox" id="f-sports" checked
+            class="w-4 h-4 accent-indigo-600 cursor-pointer"
+            onclick="event.stopPropagation()">
           <div>
             <p class="text-sm font-semibold text-gray-700">🏃‍♂️ Sport-Ausrüstung mitnehmen</p>
-            <p class="text-xs text-gray-400">Laufausrüstung, Pulsmesser & Polar-Ladegerät</p>
+            <p class="text-xs text-gray-400">Laufausrüstung, Pulsmesser &amp; Polar-Ladegerät</p>
           </div>
         </div>
 
-        <!-- Submit -->
+        <!-- Generate button -->
         <button onclick="createTrip()"
           class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl py-3.5 font-bold text-sm transition-colors shadow-lg shadow-indigo-200 mt-1">
           ✨ Packliste generieren
         </button>
+
       </div>
     </div>
   `;
 }
 
-// ============================================================
-// RENDER BASE LIST
-// ============================================================
+
+// ─────────────────────────────────────────────────────────────
+// RENDER: BASE LIST TAB
+// ─────────────────────────────────────────────────────────────
+
+/** Renders the editable base-list with a save status bar and an "add category" form. */
 function renderBaseList() {
-  const c = document.getElementById('content-baselist');
-  if (!c) return;
+  const panelEl = document.getElementById('content-baselist');
+  if (!panelEl) return;
 
-  const builtInIds = ['health', 'documents', 'basics'];
-  const QUICK_EMOJIS = ['📦','🎒','🧳','💊','🧴','🎿','🏋️','🎯','🎨','📚','🍽️','💼','🎵','🧹','🛒'];
-
-  const savedTimeStr = baseListSavedAt
-    ? baseListSavedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr'
+  const savedTimeLabel = baseListLastSaved
+    ? baseListLastSaved.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr'
     : 'noch nicht manuell gespeichert';
 
   let html = `
-    <!-- Save Status Bar -->
+    <!-- ── Save Status Bar ───────────────────────── -->
     <div class="bg-white rounded-2xl shadow-sm px-4 py-3 mb-4 flex items-center justify-between gap-3">
       <div class="flex items-center gap-2 min-w-0">
-        <span class="w-2 h-2 rounded-full flex-shrink-0 ${baseListSavedAt ? 'bg-green-400' : 'bg-amber-400'}"></span>
+        <span class="w-2 h-2 rounded-full flex-shrink-0 ${baseListLastSaved ? 'bg-green-400' : 'bg-amber-400'}"></span>
         <div class="min-w-0">
           <p class="text-xs font-semibold text-gray-700">Basisliste</p>
-          <p class="text-xs text-gray-400 truncate">Zuletzt gespeichert: ${savedTimeStr}</p>
+          <p class="text-xs text-gray-400 truncate">Zuletzt gespeichert: ${savedTimeLabel}</p>
         </div>
       </div>
       <button onclick="explicitSaveBaseList()"
@@ -656,70 +955,77 @@ function renderBaseList() {
     </div>
   `;
 
-  state.baseList.forEach(cat => {
-    const isBuiltIn = builtInIds.includes(cat.id);
+  // ── Category Cards ──────────────────────────────────────────
+  state.baseList.forEach(category => {
+    const isBuiltIn = BUILT_IN_CATEGORY_IDS.includes(category.id);
+
     html += `
       <div class="bg-white rounded-2xl shadow-sm mb-3 overflow-hidden fade-in">
+
         <div class="px-4 py-3 bg-gradient-to-r from-indigo-50 to-sky-50 flex items-center justify-between">
-          <h3 class="font-bold text-gray-700 text-sm">${esc(cat.emoji)} ${esc(cat.name)}</h3>
+          <h3 class="font-bold text-gray-700 text-sm">${escapeHtml(category.emoji)} ${escapeHtml(category.name)}</h3>
           ${!isBuiltIn ? `
-            <button onclick="removeBaseCategory('${cat.id}')"
+            <button onclick="removeBaseCategory('${category.id}')"
               class="text-red-300 hover:text-red-500 text-xs font-semibold transition-colors flex items-center gap-1 py-0.5 px-2 rounded-lg hover:bg-red-50">
               🗑️ Löschen
             </button>
           ` : ''}
         </div>
+
         <div class="divide-y divide-gray-50">
-          ${cat.items.map((item, idx) => `
+          ${category.items.map((itemText, index) => `
             <div class="flex items-center gap-3 px-4 py-2.5 group hover:bg-gray-50">
-              <span class="flex-1 text-sm text-gray-700">${esc(item)}</span>
-              <button onclick="removeBaseItem('${cat.id}', ${idx})"
-                class="delete-btn text-red-400 hover:text-red-600 text-xl leading-none px-1" title="Löschen">×</button>
+              <span class="flex-1 text-sm text-gray-700">${escapeHtml(itemText)}</span>
+              <button onclick="removeBaseItem('${category.id}', ${index})"
+                class="delete-btn text-red-400 hover:text-red-600 text-xl leading-none px-1"
+                title="Löschen">×</button>
             </div>
           `).join('')}
-          ${cat.items.length === 0 ? '<p class="px-4 py-3 text-sm text-gray-400 italic">Noch keine Einträge</p>' : ''}
+          ${category.items.length === 0
+            ? '<p class="px-4 py-3 text-sm text-gray-400 italic">Noch keine Einträge</p>'
+            : ''}
         </div>
+
         <div class="px-4 py-2.5 border-t border-gray-100 flex items-center gap-2">
           <input type="text"
-            id="binp-${cat.id}"
+            id="binp-${category.id}"
             placeholder="+ Element hinzufügen …"
             class="flex-1 text-sm text-gray-600 placeholder-gray-400 bg-transparent outline-none py-0.5 min-w-0"
-            onkeydown="if(event.key==='Enter'){addBaseItem('${cat.id}',this.value);this.value=''}"
-          >
-          <button onclick="const el=document.getElementById('binp-${cat.id}');addBaseItem('${cat.id}',el.value);el.value=''"
+            onkeydown="if(event.key==='Enter'){addBaseItem('${category.id}', this.value); this.value=''}">
+          <button onclick="(function(){ var el=document.getElementById('binp-${category.id}'); addBaseItem('${category.id}', el.value); el.value=''; })()"
             class="text-indigo-400 hover:text-indigo-600 text-xs font-semibold flex-shrink-0 transition-colors">
             Hinzufügen
           </button>
         </div>
+
       </div>
     `;
   });
 
-  // ── New Category Form ──────────────────────────────────────
+  // ── New Category Form ───────────────────────────────────────
   html += `
     <div class="bg-white rounded-2xl shadow-sm mt-5 p-4 border-2 border-dashed border-indigo-200">
       <h3 class="font-bold text-gray-700 text-sm mb-3">➕ Neue Kategorie hinzufügen</h3>
 
       <p class="text-xs text-gray-500 font-medium mb-2">Emoji wählen:</p>
       <div class="flex flex-wrap gap-1.5 mb-3">
-        ${QUICK_EMOJIS.map(e => `
-          <button data-emoji="${e}" onclick="setNewCatEmoji('${e}')"
+        ${QUICK_EMOJI_PICKS.map(emoji => `
+          <button data-emoji="${emoji}" onclick="setNewCategoryEmoji('${emoji}')"
             class="emoji-pick-btn w-8 h-8 text-base rounded-lg hover:bg-indigo-50 flex items-center justify-center transition-all border border-transparent hover:border-indigo-200">
-            ${e}
+            ${emoji}
           </button>
         `).join('')}
       </div>
 
       <div class="flex gap-2">
         <input type="text" id="new-cat-emoji-input" maxlength="2"
-          placeholder="✏️"
-          title="Eigenes Emoji eintippen"
+          placeholder="✏️" title="Eigenes Emoji eintippen"
           class="w-12 border-2 border-gray-100 focus:border-indigo-300 rounded-xl px-1 py-2 text-center text-lg outline-none transition-colors bg-gray-50 focus:bg-white flex-shrink-0"
-          oninput="if(this.value.trim())newCatEmoji=this.value.trim()">
+          oninput="if(this.value.trim()) newCategoryEmoji = this.value.trim()">
         <input type="text" id="new-cat-name"
           placeholder="Kategorie-Name …"
           class="flex-1 border-2 border-gray-100 focus:border-indigo-300 rounded-xl px-3 py-2 text-sm outline-none transition-colors bg-gray-50 focus:bg-white min-w-0"
-          onkeydown="if(event.key==='Enter')addBaseCategory()">
+          onkeydown="if(event.key==='Enter') addBaseCategory()">
         <button onclick="addBaseCategory()"
           class="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl px-4 py-2 text-sm font-bold transition-colors flex-shrink-0">
           ✓
@@ -733,92 +1039,124 @@ function renderBaseList() {
     </button>
   `;
 
-  c.innerHTML = html;
+  panelEl.innerHTML = html;
 
-  // Highlight the currently selected emoji
-  document.querySelectorAll('.emoji-pick-btn').forEach(btn => {
-    if (btn.dataset.emoji === newCatEmoji) {
-      btn.classList.add('ring-2', 'ring-indigo-500', 'bg-indigo-50');
-    }
+  // Highlight the currently selected emoji button
+  document.querySelectorAll('.emoji-pick-btn').forEach(emojiBtn => {
+    const isSelected = emojiBtn.dataset.emoji === newCategoryEmoji;
+    emojiBtn.classList.toggle('ring-2',          isSelected);
+    emojiBtn.classList.toggle('ring-indigo-500', isSelected);
+    emojiBtn.classList.toggle('bg-indigo-50',    isSelected);
   });
 }
 
-function addBaseItem(catId, text) {
-  if (!text || !text.trim()) return;
-  const cat = state.baseList.find(c => c.id === catId);
-  if (!cat) return;
-  cat.items.push(text.trim());
-  saveBaseList();
+/**
+ * Appends a new item to a base-list category, then persists and re-renders.
+ * @param {string} categoryId
+ * @param {string} text
+ */
+function addBaseItem(categoryId, text) {
+  if (!text?.trim()) return;
+  const category = state.baseList.find(c => c.id === categoryId);
+  if (!category) return;
+
+  category.items.push(text.trim());
+  persistBaseList();
   renderBaseList();
-  setTimeout(() => { const el = document.getElementById(`binp-${catId}`); if (el) el.focus(); }, 0);
+  setTimeout(() => document.getElementById(`binp-${categoryId}`)?.focus(), 0);
 }
 
-function removeBaseItem(catId, idx) {
-  const cat = state.baseList.find(c => c.id === catId);
-  if (!cat) return;
-  cat.items.splice(idx, 1);
-  saveBaseList();
+/**
+ * Removes an item from a base-list category by index, then persists and re-renders.
+ * @param {string} categoryId
+ * @param {number} itemIndex
+ */
+function removeBaseItem(categoryId, itemIndex) {
+  const category = state.baseList.find(c => c.id === categoryId);
+  if (!category) return;
+
+  category.items.splice(itemIndex, 1);
+  persistBaseList();
   renderBaseList();
 }
 
-function setNewCatEmoji(emoji) {
-  newCatEmoji = emoji;
-  document.querySelectorAll('.emoji-pick-btn').forEach(btn => {
-    const active = btn.dataset.emoji === emoji;
-    btn.classList.toggle('ring-2', active);
-    btn.classList.toggle('ring-indigo-500', active);
-    btn.classList.toggle('bg-indigo-50', active);
+/**
+ * Updates the selected emoji for the "new category" form and syncs button highlights.
+ * @param {string} emoji
+ */
+function setNewCategoryEmoji(emoji) {
+  newCategoryEmoji = emoji;
+  document.querySelectorAll('.emoji-pick-btn').forEach(emojiBtn => {
+    const isSelected = emojiBtn.dataset.emoji === emoji;
+    emojiBtn.classList.toggle('ring-2',          isSelected);
+    emojiBtn.classList.toggle('ring-indigo-500', isSelected);
+    emojiBtn.classList.toggle('bg-indigo-50',    isSelected);
   });
-  const inp = document.getElementById('new-cat-emoji-input');
-  if (inp) inp.value = '';
+  const customEmojiInput = document.getElementById('new-cat-emoji-input');
+  if (customEmojiInput) customEmojiInput.value = '';
 }
 
+/** Reads the new-category form values, pushes to state, persists, and re-renders. */
 function addBaseCategory() {
-  const nameEl  = document.getElementById('new-cat-name');
-  const emojiEl = document.getElementById('new-cat-emoji-input');
-  if (!nameEl || !nameEl.value.trim()) { nameEl && nameEl.focus(); return; }
-  const name  = nameEl.value.trim();
-  const emoji = (emojiEl && emojiEl.value.trim()) ? emojiEl.value.trim() : newCatEmoji;
-  state.baseList.push({ id: uid(), emoji, name, items: [] });
-  saveBaseList();
-  newCatEmoji = '📦';
+  const nameInputEl  = document.getElementById('new-cat-name');
+  const emojiInputEl = document.getElementById('new-cat-emoji-input');
+  if (!nameInputEl?.value.trim()) { nameInputEl?.focus(); return; }
+
+  const categoryName  = nameInputEl.value.trim();
+  const categoryEmoji = emojiInputEl?.value.trim() || newCategoryEmoji;
+
+  state.baseList.push({ id: generateId(), emoji: categoryEmoji, name: categoryName, items: [] });
+
+  persistBaseList();
+  newCategoryEmoji = '📦';
   renderBaseList();
-  showToast(`✅ Kategorie "${name}" hinzugefügt!`);
+  showToast(`✅ Kategorie "${categoryName}" hinzugefügt!`);
 }
 
-function removeBaseCategory(catId) {
-  const cat = state.baseList.find(c => c.id === catId);
-  if (!cat || !confirm(`Kategorie "${cat.name}" wirklich löschen?`)) return;
-  state.baseList = state.baseList.filter(c => c.id !== catId);
-  saveBaseList();
+/**
+ * Deletes a user-created category from the base list.
+ * Built-in categories cannot be removed via this path.
+ * @param {string} categoryId
+ */
+function removeBaseCategory(categoryId) {
+  const category = state.baseList.find(c => c.id === categoryId);
+  if (!category || !confirm(`Kategorie "${category.name}" wirklich löschen?`)) return;
+
+  state.baseList = state.baseList.filter(c => c.id !== categoryId);
+  persistBaseList();
   renderBaseList();
   showToast('🗑️ Kategorie gelöscht!');
 }
 
+/** Explicitly saves the base list and refreshes the save indicator. */
 function explicitSaveBaseList() {
-  saveBaseList();
+  persistBaseList();
   renderBaseList();
   showToast('💾 Basisliste gespeichert!');
 }
 
+/** Resets the base list to factory defaults after a confirmation prompt. */
 function resetBaseList() {
   if (!confirm('Basisliste auf Standard zurücksetzen? Alle eigenen Änderungen gehen verloren.')) return;
-  state.baseList = getDefaultBaseList();
-  newCatEmoji = '📦';
-  saveBaseList();
+  state.baseList   = getDefaultBaseList();
+  newCategoryEmoji = '📦';
+  persistBaseList();
   renderBaseList();
   showToast('🔄 Basisliste zurückgesetzt!');
 }
 
-// ============================================================
-// RENDER ARCHIVE
-// ============================================================
+
+// ─────────────────────────────────────────────────────────────
+// RENDER: ARCHIVE TAB
+// ─────────────────────────────────────────────────────────────
+
+/** Renders the list of saved trips with load/delete actions. */
 function renderArchive() {
-  const c = document.getElementById('content-archive');
-  if (!c) return;
+  const panelEl = document.getElementById('content-archive');
+  if (!panelEl) return;
 
   if (state.savedTrips.length === 0) {
-    c.innerHTML = `
+    panelEl.innerHTML = `
       <div class="text-center py-16 fade-in">
         <div class="text-6xl mb-4">🗄️</div>
         <p class="text-lg font-semibold text-gray-500">Noch keine gespeicherten Reisen</p>
@@ -828,13 +1166,15 @@ function renderArchive() {
     return;
   }
 
-  let html = `<div class="fade-in">`;
+  let html = '<div class="fade-in">';
+
+  // Newest first
   [...state.savedTrips].reverse().forEach(trip => {
-    const prog = getProgress(trip);
-    const dt = new Date(trip.createdAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const barColor = prog.pct === 100 ? 'bg-green-500' : 'bg-indigo-400';
-    const pctColor = prog.pct === 100 ? 'text-green-600' : 'text-indigo-600';
-    const isActive = state.currentTrip && state.currentTrip.id === trip.id;
+    const progress     = calculateProgress(trip);
+    const dateLabel    = new Date(trip.createdAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const isActiveTrip = state.currentTrip?.id === trip.id;
+    const barColor     = progress.pct === 100 ? 'bg-green-500' : 'bg-indigo-400';
+    const pctColor     = progress.pct === 100 ? 'text-green-600' : 'text-indigo-600';
 
     html += `
       <div class="bg-white rounded-2xl shadow-sm mb-3 overflow-hidden">
@@ -842,18 +1182,20 @@ function renderArchive() {
           <div class="flex items-start justify-between gap-2 mb-2">
             <div>
               <div class="flex items-center gap-2">
-                <h3 class="font-bold text-gray-800">${esc(trip.name)}</h3>
-                ${isActive ? '<span class="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-semibold">Aktiv</span>' : ''}
+                <h3 class="font-bold text-gray-800">${escapeHtml(trip.name)}</h3>
+                ${isActiveTrip ? '<span class="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-semibold">Aktiv</span>' : ''}
               </div>
               <p class="text-xs text-gray-400 mt-0.5">
-                ${dt} &middot; ${trip.days} Tage &middot; ${trip.weather === 'warm' ? '☀️ Warm' : '❄️ Kalt'}${trip.sports ? ' &middot; 🏃 Sport' : ''}
+                ${dateLabel} &middot; ${trip.days} Tage &middot;
+                ${trip.weather === 'warm' ? '☀️ Warm' : '❄️ Kalt'}
+                ${trip.sports ? ' &middot; 🏃 Sport' : ''}
               </p>
             </div>
-            <span class="font-bold text-sm ${pctColor} flex-shrink-0">${prog.pct}%</span>
+            <span class="font-bold text-sm ${pctColor} flex-shrink-0">${progress.pct}%</span>
           </div>
 
           <div class="bg-gray-100 rounded-full h-2 mb-3 overflow-hidden">
-            <div class="h-full rounded-full ${barColor} progress-bar-fill" style="width:${prog.pct}%"></div>
+            <div class="h-full rounded-full ${barColor} progress-bar" style="width:${progress.pct}%"></div>
           </div>
 
           <div class="grid grid-cols-2 gap-2">
@@ -870,47 +1212,39 @@ function renderArchive() {
       </div>
     `;
   });
-  html += `</div>`;
-  c.innerHTML = html;
+
+  html += '</div>';
+  panelEl.innerHTML = html;
 }
 
-function loadTrip(id) {
-  const trip = state.savedTrips.find(t => t.id === id);
-  if (!trip) return;
-  if (state.currentTrip && state.currentTrip.id !== id) {
-    if (!confirm('Aktuelle Reise durch diese ersetzen?')) return;
-  }
-  state.currentTrip = JSON.parse(JSON.stringify(trip));
-  collapsedCats.clear();
-  saveAll();
-  setTab('planner');
-  showToast(`📂 "${trip.name}" geladen!`);
-}
 
-function deleteTrip(id) {
-  const trip = state.savedTrips.find(t => t.id === id);
-  if (!trip) return;
-  if (!confirm(`"${trip.name}" wirklich löschen?`)) return;
-  state.savedTrips = state.savedTrips.filter(t => t.id !== id);
-  if (state.currentTrip && state.currentTrip.id === id) {
-    state.currentTrip = null;
-  }
-  saveAll();
-  renderArchive();
-  showToast('🗑️ Reise gelöscht!');
-}
+// ─────────────────────────────────────────────────────────────
+// OBSIDIAN MARKDOWN EXPORT
+// ─────────────────────────────────────────────────────────────
 
-// ============================================================
-// OBSIDIAN EXPORT
-// ============================================================
+/**
+ * Serialises the active trip into an Obsidian-compatible Markdown file
+ * and triggers a browser download.
+ *
+ * Output structure:
+ *   1. YAML frontmatter  — date, project, tags, para_category, status
+ *   2. Title + metadata  — trip name, duration, weather/sport flags
+ *   3. Progress summary  — checked / total items
+ *   4. Category sections — each rendered as ## heading + task list
+ *      • unchecked items → `- [ ] text`
+ *      • checked items   → `- [x] text`
+ *
+ * File naming: "{trip-name}-Packliste.md" with filesystem-unsafe chars stripped.
+ */
 function exportToObsidian() {
   if (!state.currentTrip) return;
-  const trip  = state.currentTrip;
-  const today = new Date().toISOString().split('T')[0];
-  const prog  = getProgress(trip);
 
-  // ── Frontmatter ──────────────────────────────────────────
-  let md = `---
+  const trip     = state.currentTrip;
+  const today    = new Date().toISOString().split('T')[0];   // YYYY-MM-DD
+  const progress = calculateProgress(trip);
+
+  // ── YAML Frontmatter ─────────────────────────────────────────
+  let markdown = `---
 erstellt: ${today}
 typ: Notiz
 datum: ${today}
@@ -924,59 +1258,80 @@ status: in-progress
 
 `;
 
-  // ── Titel & Meta ─────────────────────────────────────────
-  md += `# ✈️ ${trip.name}\n\n`;
-  md += `> ${trip.days} Tage · ${trip.weather === 'warm' ? '☀️ Warm' : '❄️ Kalt'}${trip.sports ? ' · 🏃 Sport' : ''}\n\n`;
-  md += `**Fortschritt:** ${prog.checked} / ${prog.total} erledigt (${prog.pct}%)\n\n`;
+  // ── Document Header ──────────────────────────────────────────
+  markdown += `# ✈️ ${trip.name}\n\n`;
+  markdown += `> ${trip.days} Tage · ${trip.weather === 'warm' ? '☀️ Warm' : '❄️ Kalt'}`;
+  if (trip.sports) markdown += ' · 🏃 Sport';
+  markdown += '\n\n';
+  markdown += `**Fortschritt:** ${progress.checked} / ${progress.total} erledigt (${progress.pct}%)\n\n`;
 
-  // ── Kategorien & Checkboxen ───────────────────────────────
-  trip.categories.forEach(cat => {
-    md += `## ${cat.emoji} ${cat.name}\n\n`;
-    if (cat.items.length === 0) {
-      md += `_(leer)_\n\n`;
+  // ── Category Sections ─────────────────────────────────────────
+  trip.categories.forEach(category => {
+    markdown += `## ${category.emoji} ${category.name}\n\n`;
+
+    if (category.items.length === 0) {
+      markdown += '_(leer)_\n\n';
     } else {
-      cat.items.forEach(item => {
-        md += `- [${item.checked ? 'x' : ' '}] ${item.text}\n`;
+      category.items.forEach(item => {
+        markdown += `- [${item.checked ? 'x' : ' '}] ${item.text}\n`;
       });
-      md += '\n';
+      markdown += '\n';
     }
   });
 
-  // ── Download triggern ─────────────────────────────────────
-  const blob     = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-  const url      = URL.createObjectURL(blob);
-  const a        = document.createElement('a');
-  const filename = trip.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/\s+/g, '-') + '-Packliste.md';
-  a.href         = url;
-  a.download     = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // ── File Download ─────────────────────────────────────────────
+  const safeFilename = trip.name
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')   // Strip filesystem-unsafe chars
+    .replace(/\s+/g, '-')                       // Replace whitespace with hyphens
+    + '-Packliste.md';
+
+  const blob      = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor    = document.createElement('a');
+
+  anchor.href     = objectUrl;
+  anchor.download = safeFilename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(objectUrl);
+
   showToast('📥 Obsidian-Datei wird heruntergeladen!');
 }
 
-// ============================================================
-// TOAST
-// ============================================================
-let toastTimer = null;
-function showToast(msg) {
-  const el = document.getElementById('toast');
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.remove('hidden');
-  el.style.opacity = '1';
+
+// ─────────────────────────────────────────────────────────────
+// UI UTILITIES
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Shows a temporary toast notification at the bottom of the screen.
+ * Any active toast is replaced immediately; the new one fades out after 2.2 s.
+ *
+ * @param {string} message - Text to display.
+ */
+function showToast(message) {
+  const toastEl = document.getElementById('toast');
+  if (!toastEl) return;
+
+  toastEl.textContent = message;
+  toastEl.classList.remove('hidden');
+  toastEl.style.opacity = '1';
+
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
-    el.style.opacity = '0';
-    setTimeout(() => el.classList.add('hidden'), 300);
+    toastEl.style.opacity = '0';
+    setTimeout(() => toastEl.classList.add('hidden'), 300);
   }, 2200);
 }
 
-// ============================================================
+
+// ─────────────────────────────────────────────────────────────
 // INIT
-// ============================================================
+// ─────────────────────────────────────────────────────────────
+
 setTab('planner');
+
 </script>
 
 </body>
